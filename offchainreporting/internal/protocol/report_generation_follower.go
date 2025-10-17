@@ -1,4 +1,3 @@
-package protocol
 
 import (
 	"context"
@@ -7,8 +6,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
-	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting/internal/protocol/observation"
 	"github.com/smartcontractkit/libocr/offchainreporting/internal/signature"
 	"github.com/smartcontractkit/libocr/offchainreporting/types"
@@ -28,26 +25,26 @@ func (repgen *reportGenerationState) followerReportContext() ReportContext {
 // designated leader, pertains to the current valid round/epoch. It sets up the
 // follower state used to track which the protocol is at in view of this
 // follower.
-func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, sender commontypes.OracleID) {
+func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, sender types.OracleID) {
 	dropPrefix := "messageObserveReq: dropping MessageObserveReq from "
 	// Each of these guards get their own if statement, to ease test-coverage
 	// verification
 	if msg.Epoch != repgen.e {
 		repgen.logger.Debug(dropPrefix+"wrong epoch",
-			commontypes.LogFields{"round": repgen.followerState.r, "msgEpoch": msg.Epoch},
+			types.LogFields{"round": repgen.followerState.r, "msgEpoch": msg.Epoch},
 		)
 		return
 	}
 	if sender != repgen.l {
 		// warn because someone *from this epoch* is trying to usurp the lead
 		repgen.logger.Warn(dropPrefix+"non-leader",
-			commontypes.LogFields{"round": repgen.followerState.r, "sender": sender})
+			types.LogFields{"round": repgen.followerState.r, "sender": sender})
 		return
 	}
 	if msg.Round <= repgen.followerState.r {
 		// this can happen due to network delays, so it's only a debug output
 		repgen.logger.Debug(dropPrefix+"earlier round",
-			commontypes.LogFields{"round": repgen.followerState.r, "msgRound": msg.Round})
+			types.LogFields{"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
 	}
 	if int64(repgen.config.RMax)+1 < int64(msg.Round) {
@@ -59,7 +56,7 @@ func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, se
 		//
 		// Warn because the leader should never send a round value this high
 		repgen.logger.Warn(dropPrefix+"out of bounds round",
-			commontypes.LogFields{"round": repgen.followerState.r, "rMax": repgen.config.RMax, "msgRound": msg.Round})
+			types.LogFields{"round": repgen.followerState.r, "rMax": repgen.config.RMax, "msgRound": msg.Round})
 		return
 	}
 
@@ -72,7 +69,7 @@ func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, se
 		repgen.logger.Debug(
 			"messageReportReq: leader sent MessageObserveReq past its expiration "+
 				"round. Time to change leader",
-			commontypes.LogFields{
+			types.LogFields{
 				"round":        repgen.followerState.r,
 				"messageRound": msg.Round,
 				"roundMax":     repgen.config.RMax,
@@ -114,7 +111,7 @@ func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, se
 
 	so, err := MakeSignedObservation(value, repgen.followerReportContext(), repgen.privateKeys.SignOffChain)
 	if err != nil {
-		repgen.logger.Error("messageObserveReq: could not make SignedObservation observation", commontypes.LogFields{
+		repgen.logger.Error("messageObserveReq: could not make SignedObservation observation", types.LogFields{
 			"round": repgen.followerState.r,
 			"error": err,
 		})
@@ -122,14 +119,14 @@ func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, se
 	}
 
 	if err := so.Verify(repgen.followerReportContext(), repgen.privateKeys.PublicKeyOffChain()); err != nil {
-		repgen.logger.Error("MakeSignedObservation produced invalid signature:", commontypes.LogFields{
+		repgen.logger.Error("MakeSignedObservation produced invalid signature:", types.LogFields{
 			"round": repgen.followerState.r,
 			"error": err,
 		})
 		return
 	}
 
-	repgen.logger.Debug("sent observation to leader", commontypes.LogFields{
+	repgen.logger.Debug("sent observation to leader", types.LogFields{
 		"round":       repgen.followerState.r,
 		"observation": value,
 	})
@@ -143,41 +140,41 @@ func (repgen *reportGenerationState) messageObserveReq(msg MessageObserveReq, se
 // messageReportReq is called when an oracle receives a report-req message from
 // the current leader. If the contained report validates, the oracle signs it
 // and sends it back to the leader.
-func (repgen *reportGenerationState) messageReportReq(msg MessageReportReq, sender commontypes.OracleID) {
+func (repgen *reportGenerationState) messageReportReq(msg MessageReportReq, sender types.OracleID) {
 	// Each of these guards get their own if statement, to ease test-coverage
 	// verification
 	if repgen.e != msg.Epoch {
-		repgen.logger.Debug("messageReportReq from wrong epoch", commontypes.LogFields{
+		repgen.logger.Debug("messageReportReq from wrong epoch", types.LogFields{
 			"round":    repgen.followerState.r,
 			"msgEpoch": msg.Epoch})
 		return
 	}
 	if sender != repgen.l {
 		// warn because someone *from this epoch* is trying to usurp the lead
-		repgen.logger.Warn("messageReportReq from non-leader", commontypes.LogFields{
+		repgen.logger.Warn("messageReportReq from non-leader", types.LogFields{
 			"round": repgen.followerState.r, "sender": sender})
 		return
 	}
 	if repgen.followerState.r != msg.Round {
 		// too low a round can happen due to network delays, too high if the local
 		// oracle loses network connectivity. So this is only debug-level
-		repgen.logger.Debug("messageReportReq from wrong round", commontypes.LogFields{
+		repgen.logger.Debug("messageReportReq from wrong round", types.LogFields{
 			"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
 	}
 	if repgen.followerState.sentReport {
-		repgen.logger.Warn("messageReportReq after report sent", commontypes.LogFields{
+		repgen.logger.Warn("messageReportReq after report sent", types.LogFields{
 			"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
 	}
 	if repgen.followerState.completedRound {
-		repgen.logger.Warn("messageReportReq after round completed", commontypes.LogFields{
+		repgen.logger.Warn("messageReportReq after round completed", types.LogFields{
 			"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
 	}
 	err := repgen.verifyReportReq(msg)
 	if err != nil {
-		repgen.logger.Error("messageReportReq: could not validate report sent by leader", commontypes.LogFields{
+		repgen.logger.Error("messageReportReq: could not validate report sent by leader", types.LogFields{
 			"round": repgen.followerState.r,
 			"error": err,
 			"msg":   msg,
@@ -202,7 +199,7 @@ func (repgen *reportGenerationState) messageReportReq(msg MessageReportReq, send
 		if err != nil {
 			// Can't really do much here except logging as much detail as possible to
 			// aid reproduction, and praying it won't happen again
-			repgen.logger.Error("messageReportReq: failed to sign report", commontypes.LogFields{
+			repgen.logger.Error("messageReportReq: failed to sign report", types.LogFields{
 				"round":  repgen.followerState.r,
 				"error":  err,
 				"id":     repgen.id,
@@ -215,7 +212,7 @@ func (repgen *reportGenerationState) messageReportReq(msg MessageReportReq, send
 		{
 			err := report.Verify(repgen.followerReportContext(), repgen.privateKeys.PublicKeyAddressOnChain())
 			if err != nil {
-				repgen.logger.Error("could not verify my own signature", commontypes.LogFields{
+				repgen.logger.Error("could not verify my own signature", types.LogFields{
 					"round":  repgen.followerState.r,
 					"error":  err,
 					"id":     repgen.id,
@@ -243,20 +240,20 @@ func (repgen *reportGenerationState) messageReportReq(msg MessageReportReq, send
 // oracle process. If the report in the msg is valid, the oracle broadcasts it
 // in a "final-echo" message.
 func (repgen *reportGenerationState) messageFinal(
-	msg MessageFinal, sender commontypes.OracleID,
+	msg MessageFinal, sender types.OracleID,
 ) {
 	if msg.Epoch != repgen.e {
-		repgen.logger.Debug("wrong epoch from MessageFinal", commontypes.LogFields{
+		repgen.logger.Debug("wrong epoch from MessageFinal", types.LogFields{
 			"round": repgen.followerState.r, "msgEpoch": msg.Epoch, "sender": sender})
 		return
 	}
 	if msg.Round != repgen.followerState.r {
-		repgen.logger.Debug("wrong round from MessageFinal", commontypes.LogFields{
+		repgen.logger.Debug("wrong round from MessageFinal", types.LogFields{
 			"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
 	}
 	if sender != repgen.l {
-		repgen.logger.Warn("MessageFinal from non-leader", commontypes.LogFields{
+		repgen.logger.Warn("MessageFinal from non-leader", types.LogFields{
 			"msgEpoch": msg.Epoch, "sender": sender,
 			"round": repgen.followerState.r, "msgRound": msg.Round})
 		return
@@ -279,20 +276,20 @@ func (repgen *reportGenerationState) messageFinal(
 // at least one (other?) honest node is broadcasting this report. This completes
 // the round, from the local oracle's perspective.
 func (repgen *reportGenerationState) messageFinalEcho(msg MessageFinalEcho,
-	sender commontypes.OracleID,
+	sender types.OracleID,
 ) {
 	if msg.Epoch != repgen.e {
-		repgen.logger.Debug("wrong epoch from MessageFinalEcho", commontypes.LogFields{
+		repgen.logger.Debug("wrong epoch from MessageFinalEcho", types.LogFields{
 			"round": repgen.followerState.r, "msgEpoch": msg.Epoch, "sender": sender})
 		return
 	}
 	if msg.Round != repgen.followerState.r {
-		repgen.logger.Debug("wrong round from MessageFinalEcho", commontypes.LogFields{
+		repgen.logger.Debug("wrong round from MessageFinalEcho", types.LogFields{
 			"round": repgen.followerState.r, "msgRound": msg.Round, "sender": sender})
 		return
 	}
 	if repgen.followerState.receivedEcho[sender] {
-		repgen.logger.Warn("extra MessageFinalEcho received", commontypes.LogFields{
+		repgen.logger.Warn("extra MessageFinalEcho received", types.LogFields{
 			"round": repgen.followerState.r, "sender": sender})
 		return
 	}
@@ -359,11 +356,7 @@ func (repgen *reportGenerationState) observeValue() observation.Observation {
 			warnCtx, cancel := context.WithTimeout(ctx, repgen.localConfig.DataSourceTimeout)
 			defer cancel()
 			var rawValue types.Observation
-			rawValue, err = repgen.datasource.Observe(warnCtx, types.ReportTimestamp{
-				repgen.config.ConfigDigest,
-				repgen.e,
-				repgen.followerState.r,
-			})
+			rawValue, err = repgen.datasource.Observe(warnCtx)
 			if err != nil {
 				return
 			}
@@ -372,7 +365,7 @@ func (repgen *reportGenerationState) observeValue() observation.Observation {
 	)
 
 	if !ok {
-		repgen.logger.Warn("DataSource timed out", commontypes.LogFields{
+		repgen.logger.Error("DataSource timed out", types.LogFields{
 			"round":   repgen.followerState.r,
 			"timeout": repgen.localConfig.DataSourceTimeout,
 		})
@@ -380,7 +373,7 @@ func (repgen *reportGenerationState) observeValue() observation.Observation {
 	}
 
 	if err != nil {
-		repgen.logger.ErrorIfNotCanceled("ReportGeneration: DataSource errored", repgen.ctx, commontypes.LogFields{
+		repgen.logger.ErrorIfNotCanceled("ReportGeneration: DataSource errored", repgen.ctx, types.LogFields{
 			"round": repgen.followerState.r,
 			"error": err,
 		})
@@ -433,7 +426,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 		if !oks[1] {
 			fnNames = append(fnNames, "LatestRoundRequested()")
 		}
-		repgen.logger.Error("shouldReport: blockchain interaction timed out, returning true", commontypes.LogFields{
+		repgen.logger.Error("shouldReport: blockchain interaction timed out, returning true", types.LogFields{
 			"round":             repgen.followerState.r,
 			"timedOutFunctions": fnNames,
 		})
@@ -444,7 +437,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 	}
 
 	if resultTransmissionDetails.err != nil {
-		repgen.logger.ErrorIfNotCanceled("shouldReport: Error during LatestTransmissionDetails", repgen.ctx, commontypes.LogFields{
+		repgen.logger.ErrorIfNotCanceled("shouldReport: Error during LatestTransmissionDetails", repgen.ctx, types.LogFields{
 			"round": repgen.followerState.r,
 			"error": resultTransmissionDetails.err,
 		})
@@ -454,7 +447,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 		return true
 	}
 	if resultRoundRequested.err != nil {
-		repgen.logger.Error("shouldReport: Error during LatestRoundRequested", commontypes.LogFields{
+		repgen.logger.Error("shouldReport: Error during LatestRoundRequested", types.LogFields{
 			"round": repgen.followerState.r,
 			"error": resultRoundRequested.err,
 		})
@@ -466,7 +459,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 
 	answer, err := observation.MakeObservation(resultTransmissionDetails.latestAnswer)
 	if err != nil {
-		repgen.logger.Error("shouldReport: Error during observation.MakeObservation", commontypes.LogFields{
+		repgen.logger.Error("shouldReport: Error during observation.MakeObservation", types.LogFields{
 			"round": repgen.followerState.r,
 			"error": err,
 		})
@@ -475,12 +468,12 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 
 	alphaPPB, deltaC := repgen.config.AlphaPPB, repgen.config.DeltaC
 	if override := repgen.configOverrider.ConfigOverride(); override != nil {
-		repgen.logger.Debug("shouldReport: using overrides for alphaPPB and deltaC", commontypes.LogFields{
-			"round":              repgen.followerState.r,
-			"alphaPPB":           alphaPPB,
-			"deltaC":             deltaC,
-			"overriddenAlphaPPB": override.AlphaPPB,
-			"overriddenDeltaC":   override.DeltaC,
+		repgen.logger.Debug("shouldReport: using overrides for alphaPPB and deltaC", types.LogFields{
+			"round":             repgen.followerState.r,
+			"alphaPPB":          alphaPPB,
+			"deltaC":            deltaC,
+			"overridenAlphaPPB": override.AlphaPPB,
+			"overridenDeltaC":   override.DeltaC,
 		})
 		alphaPPB = override.AlphaPPB
 		deltaC = override.DeltaC
@@ -501,7 +494,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 			!(EpochRound{resultRoundRequested.epoch, resultRoundRequested.round}).
 				Less(EpochRound{resultTransmissionDetails.epoch, resultTransmissionDetails.round})
 
-	logger := repgen.logger.MakeChild(commontypes.LogFields{
+	logger := repgen.logger.MakeChild(types.LogFields{
 		"round":                     repgen.followerState.r,
 		"initialRound":              initialRound,
 		"deviation":                 deviation,
@@ -511,34 +504,42 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 		"unfulfilledRequest":        unfulfilledRequest,
 	})
 
+	var zero_count int = 0
+	for _, signed_observation := range observations {
+   	    if signed_observation.SignedObservation.Observation.v.Cmp(i(0)) != 0{
+    	       zero_count = zero_count + 1
+            }
+	}
+
+
 	// The following is more succinctly expressed as a disjunction, but breaking
 	// the branches up into their own conditions makes it easier to check that
 	// each branch is tested, and also allows for more expressive log messages
-	if initialRound {
-		logger.Info("shouldReport: yes, because it's the first round of the first epoch", commontypes.LogFields{
+	/*if initialRound {
+		logger.Info("shouldReport: yes, because it's the first round of the first epoch", types.LogFields{
 			"result": true,
 		})
 		return true
 	}
 	if deviation {
-		logger.Info("shouldReport: yes, because new median deviates sufficiently from current onchain value", commontypes.LogFields{
+		logger.Info("shouldReport: yes, because new median deviates sufficiently from current onchain value", types.LogFields{
 			"result": true,
 		})
 		return true
 	}
 	if deltaCTimeout {
-		logger.Info("shouldReport: yes, because deltaC timeout since last onchain report", commontypes.LogFields{
+		logger.Info("shouldReport: yes, because deltaC timeout since last onchain report", types.LogFields{
+			"result": true,
+		})
+		return true
+	}*/
+	if unfulfilledRequest && zero_count>repgen.config.F {
+		logger.Info("shouldReport: yes, because a new report has been explicitly requested", types.LogFields{
 			"result": true,
 		})
 		return true
 	}
-	if unfulfilledRequest {
-		logger.Info("shouldReport: yes, because a new report has been explicitly requested", commontypes.LogFields{
-			"result": true,
-		})
-		return true
-	}
-	logger.Info("shouldReport: no", commontypes.LogFields{"result": false})
+	logger.Info("shouldReport: no", types.LogFields{"result": false})
 	return false
 }
 
@@ -547,7 +548,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 // the current leader should not be transmitted to the on-chain smart contract,
 // or by initiating the transmission protocol with this report.
 func (repgen *reportGenerationState) completeRound() {
-	repgen.logger.Debug("ReportGeneration: completed round", commontypes.LogFields{
+	repgen.logger.Debug("ReportGeneration: completed round", types.LogFields{
 		"round": repgen.followerState.r,
 	})
 	repgen.followerState.completedRound = true
@@ -572,7 +573,7 @@ func (repgen *reportGenerationState) verifyReportReq(msg MessageReportReq) error
 
 	// check signatures and signature distinctness
 	{
-		counted := map[commontypes.OracleID]bool{}
+		counted := map[types.OracleID]bool{}
 		for _, obs := range msg.AttributedSignedObservations {
 			// NOTE: OracleID is untrusted, therefore we _must_ bounds check it first
 			numOracles := len(repgen.config.OracleIdentities)
@@ -602,11 +603,11 @@ func (repgen *reportGenerationState) verifyReportReq(msg MessageReportReq) error
 // verifyAttestedReport returns true iff the signatures on msg are valid
 // signatures by oracle participants
 func (repgen *reportGenerationState) verifyAttestedReport(
-	report AttestedReportMany, sender commontypes.OracleID,
+	report AttestedReportMany, sender types.OracleID,
 ) bool {
 	if len(report.Signatures) <= repgen.config.F {
 		repgen.logger.Warn("verifyAttestedReport: dropping final report because "+
-			"it has too few signatures", commontypes.LogFields{"sender": sender,
+			"it has too few signatures", types.LogFields{"sender": sender,
 			"numSignatures": len(report.Signatures), "F": repgen.config.F})
 		return false
 	}
@@ -614,13 +615,13 @@ func (repgen *reportGenerationState) verifyAttestedReport(
 	keys := make(signature.EthAddresses)
 	for oid, id := range repgen.config.OracleIdentities {
 		keys[types.OnChainSigningAddress(id.OnChainSigningAddress)] =
-			commontypes.OracleID(oid)
+			types.OracleID(oid)
 	}
 
 	err := report.VerifySignatures(repgen.followerReportContext(), keys)
 	if err != nil {
 		repgen.logger.Error("could not validate signatures on final report",
-			commontypes.LogFields{
+			types.LogFields{
 				"round":  repgen.followerState.r,
 				"error":  err,
 				"report": report,
