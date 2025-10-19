@@ -358,7 +358,11 @@ func (repgen *reportGenerationState) observeValue() observation.Observation {
 			warnCtx, cancel := context.WithTimeout(ctx, repgen.localConfig.DataSourceTimeout)
 			defer cancel()
 			var rawValue types.Observation
-			rawValue, err = repgen.datasource.Observe(warnCtx)
+			rawValue, err = repgen.datasource.Observe(warnCtx, types.ReportTimestamp{
+				repgen.config.ConfigDigest,
+				repgen.e,
+				repgen.followerState.r,
+			})
 			if err != nil {
 				return
 			}
@@ -508,7 +512,7 @@ func (repgen *reportGenerationState) shouldReport(observations []AttributedSigne
 
 	var zero_count int = 0
 	for _, signed_observation := range observations {
-   	    if signed_observation.SignedObservation.Observation.v.Cmp(i(0)) != 0{
+   	    if signed_observation.SignedObservation.Observation.Cmp(big.NewInt(0)) != 0{
     	       zero_count = zero_count + 1
             }
 	}
@@ -605,7 +609,7 @@ func (repgen *reportGenerationState) verifyReportReq(msg MessageReportReq) error
 // verifyAttestedReport returns true iff the signatures on msg are valid
 // signatures by oracle participants
 func (repgen *reportGenerationState) verifyAttestedReport(
-	report AttestedReportMany, sender commontype.OracleID,
+	report AttestedReportMany, sender commontypes.OracleID,
 ) bool {
 	if len(report.Signatures) <= repgen.config.F {
 		repgen.logger.Warn("verifyAttestedReport: dropping final report because "+
